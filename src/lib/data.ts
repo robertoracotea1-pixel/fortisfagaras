@@ -1,16 +1,24 @@
 import { cache } from "react";
 import type { Property, Lead, DashboardStats } from "./types";
 import { aggregateListings, dashboardStatsFromProperties } from "./sources/aggregate";
+import { isSupabaseConfigured } from "./supabase";
+import { loadPropertiesFromDb } from "./sources/db";
 
 /**
- * Single data-access seam for the app. Today it aggregates live from the
- * source portals; once Supabase is wired, only this file changes — pages keep
- * calling getProperties()/getLeads()/getDashboardStats() unchanged.
+ * Single data-access seam for the app. When Supabase is configured it reads the
+ * pre-ingested catalog (instant, with price history); otherwise it falls back
+ * to aggregating live from the source portals. Pages call getProperties() etc.
+ * unchanged either way.
  *
  * `cache()` dedups calls within a single render; pages set `revalidate` so the
- * rendered output (and these fetches) are cached for ~10 min between requests.
+ * rendered output is cached for ~10 min between requests.
  */
 const loadProperties = cache(async (): Promise<Property[]> => {
+  if (isSupabaseConfigured()) {
+    const fromDb = await loadPropertiesFromDb();
+    // If the DB hasn't been populated yet, fall back to a live pull.
+    if (fromDb.length > 0) return fromDb;
+  }
   return aggregateListings();
 });
 

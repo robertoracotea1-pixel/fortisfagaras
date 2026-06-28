@@ -3,6 +3,7 @@ import type {
   Owner,
   PropertySource,
   Platform,
+  PriceHistory,
   DashboardStats,
 } from "@/lib/types";
 import type { RawListing } from "./types";
@@ -10,6 +11,12 @@ import { fetchOlx } from "./olx";
 import { fetchPubli24 } from "./publi24";
 import { fetchStoria } from "./storia";
 import { normalizeLocality } from "./geo";
+
+/** Run all source adapters in parallel and return the raw (un-merged) listings. */
+export async function fetchAllRaw(): Promise<RawListing[]> {
+  const results = await Promise.all([fetchOlx(4), fetchPubli24(2), fetchStoria()]);
+  return results.flatMap((r) => r.listings);
+}
 
 const EUR_PER_RON = 0.2; // rough, only for dedup bucketing
 
@@ -64,7 +71,10 @@ function isRecent(iso: string | null, hours: number): boolean {
   return Date.now() - t < hours * 3600_000;
 }
 
-function mergeGroup(group: RawListing[]): Property {
+function mergeGroup(
+  group: RawListing[],
+  phMap?: Map<string, PriceHistory[]>,
+): Property {
   // Primary = richest source, then most images.
   const primary = [...group].sort(
     (a, b) =>
@@ -116,6 +126,22 @@ function mergeGroup(group: RawListing[]): Property {
     : group.find((l) => l.price != null && l.price > 0) ?? primary;
   const price = priced.price ?? 0;
 
+  // Real price history from the DB (per source external_id), else a single point.
+  let priceHistory: PriceHistory[] = [{ price, date: firstSeenAt }];
+  if (phMap) {
+    const merged = group
+      .flatMap((l) => phMap.get(l.externalId) ?? [])
+      .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+    if (merged.length > 0) {
+      priceHistory = merged.map((h, i) => {
+        const prev = merged[i - 1]?.price;
+        return prev && prev > 0
+          ? { ...h, changePct: Math.round(((h.price - prev) / prev) * 100) }
+          : h;
+      });
+    }
+  }
+
   return {
     id: primary.externalId,
     title: primary.title,
@@ -134,7 +160,7 @@ function mergeGroup(group: RawListing[]): Property {
     owner,
     sources,
     images,
-    priceHistory: [{ price, date: firstSeenAt }],
+    priceHistory,
     firstSeenAt,
     lastUpdatedAt: new Date().toISOString(),
     isNew: isRecent(firstSeenAt, 48),
@@ -143,11 +169,11 @@ function mergeGroup(group: RawListing[]): Property {
   };
 }
 
-/** Run all sources, dedup across them, and return UI-ready properties. */
-export async function aggregateListings(): Promise<Property[]> {
-  const results = await Promise.all([fetchOlx(4), fetchPubli24(2), fetchStoria()]);
-  const all = results.flatMap((r) => r.listings);
-
+/** Dedup raw listings across sources and merge into UI-ready properties. */
+export function mergeListings(
+  all: RawListing[],
+  phMap?: Map<string, PriceHistory[]>,
+): Property[] {
   const groups = new Map<string, RawListing[]>();
   for (const l of all) {
     const fp = fingerprint(l);
@@ -156,10 +182,15 @@ export async function aggregateListings(): Promise<Property[]> {
     else groups.set(fp, [l]);
   }
 
-  const properties = Array.from(groups.values()).map(mergeGroup);
+  const properties = Array.from(groups.values()).map((g) => mergeGroup(g, phMap));
   // Newest first.
   properties.sort((a, b) => Date.parse(b.firstSeenAt) - Date.parse(a.firstSeenAt));
   return properties;
+}
+
+/** Live path: fetch all sources, dedup, and return UI-ready properties. */
+export async function aggregateListings(): Promise<Property[]> {
+  return mergeListings(await fetchAllRaw());
 }
 
 /** Compute dashboard stats from a set of properties. */
