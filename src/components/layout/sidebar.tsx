@@ -31,14 +31,13 @@ const navItems = [
     label: "Proprietăți",
     href: "/properties",
     icon: Home,
-    badge: "87",
+    badge: null,
   },
   {
     label: "CRM Leads",
     href: "/leads",
     icon: Kanban,
-    badge: "5",
-    badgeVariant: "destructive" as const,
+    badge: null,
   },
   {
     label: "Favorite",
@@ -91,7 +90,7 @@ export function Sidebar() {
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-[11px] text-muted-foreground font-medium">Import activ</span>
         </div>
-        <span className="text-[10px] text-emerald-400 font-semibold">6 surse</span>
+        <span className="text-[10px] text-emerald-400 font-semibold">3 surse</span>
       </div>
 
       {/* Navigation */}
@@ -112,10 +111,7 @@ export function Sidebar() {
               <item.icon className={cn("w-4 h-4 shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
               <span className="flex-1">{item.label}</span>
               {item.badge && (
-                <Badge
-                  variant={item.badgeVariant ?? "secondary"}
-                  className="text-[10px] h-4 px-1.5 font-semibold"
-                >
+                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-semibold">
                   {item.badge}
                 </Badge>
               )}
@@ -161,7 +157,6 @@ export function Sidebar() {
             <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full border border-sidebar" />
           </div>
           <span className="flex-1">Notificări</span>
-          <Badge variant="secondary" className="text-[10px] h-4 px-1.5">3</Badge>
         </Link>
       </div>
 
